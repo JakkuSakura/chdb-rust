@@ -7,6 +7,7 @@ keywords = ["clickhouse", "chdb", "database", "embedded", "analytics"]
 [dependencies]
 thiserror = "1"
 serde = { version = "1.0", features = ["derive"] }
+serde_bytes = "0.11"
 bytes = "1"
 clickhouse = { git = "https://github.com/ClickHouse/clickhouse-rs", tag = "v0.13.2", features = [] }
 
