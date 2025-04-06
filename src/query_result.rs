@@ -1,11 +1,13 @@
+use crate::error::Error;
+use crate::error::Result;
+use crate::{bindings, rowbinary};
+use clickhouse::Row;
 use core::slice;
+use serde::Deserialize;
 use std::borrow::Cow;
 use std::ffi::CStr;
 use std::time::Duration;
 
-use crate::bindings;
-use crate::error::Error;
-use crate::error::Result;
 #[derive(Clone)]
 pub struct QueryResult {
     inner: *mut bindings::local_result_v2,
@@ -18,7 +20,7 @@ impl QueryResult {
     pub fn data_utf8(&self) -> Result<String> {
         let buf = self.data_ref();
 
-        String::from_utf8(buf.to_vec()).map_err(Error::NonUtf8Sequence)
+        String::from_utf8(buf.to_vec()).map_err(Error::FromUtf8Error)
     }
 
     pub fn data_utf8_lossy(&self) -> Cow<str> {
@@ -66,6 +68,18 @@ impl QueryResult {
         Err(Error::QueryError(unsafe {
             CStr::from_ptr(err_ptr).to_string_lossy().to_string()
         }))
+    }
+    pub fn fetch_rows<'a, T: Row + Deserialize<'a>>(&'a self, result: &mut Vec<T>) -> Result<()> {
+        let count = self.rows_read();
+        result.reserve(count as usize);
+        let data = &mut self.data_ref();
+
+        for _ in 0..count {
+            let r = rowbinary::deserialize_from(data)?;
+            result.push(r);
+        }
+
+        Ok(())
     }
 }
 

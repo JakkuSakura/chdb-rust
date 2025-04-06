@@ -11,6 +11,7 @@ pub mod error;
 pub mod format;
 pub mod log_level;
 pub mod query_result;
+mod rowbinary;
 pub mod session;
 
 use std::ffi::{c_char, CString};
@@ -20,14 +21,12 @@ use crate::error::Error;
 use crate::error::Result;
 use crate::query_result::QueryResult;
 
-pub fn execute(query: &str, query_args: Option<&[Arg]>) -> Result<QueryResult> {
-    let mut argv = Vec::with_capacity(query_args.as_ref().map_or(0, |v| v.len()) + 2);
+pub fn execute(query: &str, query_args: &[Arg]) -> Result<QueryResult> {
+    let mut argv = Vec::with_capacity(query_args.len() + 2);
     argv.push(arg_clickhouse()?.into_raw());
 
-    if let Some(args) = query_args {
-        for arg in args {
-            argv.push(arg.to_cstring()?.into_raw());
-        }
+    for arg in query_args {
+        argv.push(arg.to_cstring()?.into_raw());
     }
 
     argv.push(arg_query(query)?.into_raw());

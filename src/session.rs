@@ -8,22 +8,18 @@ use crate::arg_data_path;
 use crate::arg_query;
 use crate::call_chdb;
 use crate::error::Error;
+use crate::error::Result;
+use crate::format::OutputFormat;
 use crate::query_result::QueryResult;
 
-pub struct SessionBuilder<'a> {
+pub struct SessionBuilder {
     data_path: PathBuf,
-    default_args: Vec<Arg<'a>>,
+    default_args: Vec<Arg<'static>>,
+    default_output_format: Option<OutputFormat>,
     auto_cleanup: bool,
 }
 
-#[derive(Clone)]
-pub struct Session {
-    default_args: Vec<CString>,
-    data_path: String,
-    auto_cleanup: bool,
-}
-
-impl<'a> SessionBuilder<'a> {
+impl SessionBuilder {
     pub fn new() -> Self {
         let mut data_path = std::env::current_dir().unwrap();
         data_path.push("chdb");
@@ -31,6 +27,7 @@ impl<'a> SessionBuilder<'a> {
         Self {
             data_path,
             default_args: Vec::new(),
+            default_output_format: None,
             auto_cleanup: false,
         }
     }
@@ -40,7 +37,7 @@ impl<'a> SessionBuilder<'a> {
         self
     }
 
-    pub fn with_arg(mut self, arg: Arg<'a>) -> Self {
+    pub fn with_arg(mut self, arg: Arg<'static>) -> Self {
         self.default_args.push(arg);
         self
     }
@@ -51,7 +48,13 @@ impl<'a> SessionBuilder<'a> {
         self
     }
 
-    pub fn build(self) -> Result<Session, Error> {
+    pub fn with_output_format(mut self, format: OutputFormat) -> Self {
+        self.default_output_format = Some(format);
+        self.default_args.push(Arg::OutputFormat(format));
+        self
+    }
+
+    pub fn build(self) -> Result<Session> {
         let data_path = self.data_path.to_str().ok_or(Error::PathError)?.to_string();
 
         fs::create_dir_all(&self.data_path)?;
@@ -74,27 +77,34 @@ impl<'a> SessionBuilder<'a> {
         })
     }
 }
+#[derive(Clone)]
+pub struct Session {
+    default_args: Vec<CString>,
+    data_path: String,
+    auto_cleanup: bool,
+}
 
-impl<'a> Default for SessionBuilder<'a> {
+impl Default for SessionBuilder {
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl Session {
-    pub fn execute(&self, query: &str, query_args: Option<&[Arg]>) -> Result<QueryResult, Error> {
-        let mut argv = Vec::with_capacity(
-            self.default_args.len() + query_args.as_ref().map_or(0, |v| v.len()) + 1,
-        );
+    pub fn new() -> Result<Self> {
+        SessionBuilder::new().build()
+    }
+    pub fn builder() -> SessionBuilder {
+        SessionBuilder::new()
+    }
+    pub fn execute(&self, query: &str, query_args: &[Arg]) -> Result<QueryResult, Error> {
+        let mut argv = Vec::with_capacity(self.default_args.len() + query_args.len() + 1);
 
         for arg in &self.default_args {
             argv.push(arg.clone().into_raw())
         }
-
-        if let Some(args) = query_args {
-            for arg in args {
-                argv.push(arg.to_cstring()?.into_raw());
-            }
+        for arg in query_args {
+            argv.push(arg.to_cstring()?.into_raw());
         }
 
         argv.push(arg_query(query)?.into_raw());

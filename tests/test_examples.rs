@@ -5,6 +5,8 @@ use chdb_rust::format::InputFormat;
 use chdb_rust::format::OutputFormat;
 use chdb_rust::log_level::LogLevel;
 use chdb_rust::session::SessionBuilder;
+use clickhouse::Row;
+use serde::Deserialize;
 
 #[test]
 fn test_stateful() -> Result<()> {
@@ -23,7 +25,7 @@ fn test_stateful() -> Result<()> {
     // Create database.
     //
 
-    session.execute("CREATE DATABASE demo; USE demo", Some(&[Arg::MultiQuery]))?;
+    session.execute("CREATE DATABASE demo; USE demo", &[Arg::MultiQuery])?;
 
     //
     // Create table.
@@ -31,28 +33,28 @@ fn test_stateful() -> Result<()> {
 
     session.execute(
         "CREATE TABLE logs (id UInt64, msg String) ENGINE = MergeTree() ORDER BY id",
-        None,
+        &[],
     )?;
 
     //
     // Insert into table.
     //
 
-    session.execute("INSERT INTO logs (id, msg) VALUES (1, 'test')", None)?;
+    session.execute("INSERT INTO logs (id, msg) VALUES (1, 'test')", &[])?;
 
     //
     // Select from table.
     //
     let len = session.execute(
         "SELECT COUNT(*) FROM logs",
-        Some(&[Arg::OutputFormat(OutputFormat::JSONEachRow)]),
+        &[Arg::OutputFormat(OutputFormat::JSONEachRow)],
     )?;
 
     assert_eq!(len.data_utf8_lossy(), "{\"COUNT()\":1}\n");
 
     let result = session.execute(
         "SELECT * FROM logs",
-        Some(&[Arg::OutputFormat(OutputFormat::JSONEachRow)]),
+        &[Arg::OutputFormat(OutputFormat::JSONEachRow)],
     )?;
     assert_eq!(result.data_utf8_lossy(), "{\"id\":1,\"msg\":\"test\"}\n");
     Ok(())
@@ -65,11 +67,24 @@ fn test_stateless() -> Result<()> {
         InputFormat::CSV.as_str()
     );
 
-    let result = execute(
-        &query,
-        Some(&[Arg::OutputFormat(OutputFormat::JSONEachRow)]),
-    )?;
+    let result = execute(&query, &[Arg::OutputFormat(OutputFormat::JSONEachRow)])?;
 
     assert_eq!(result.data_utf8_lossy(), "{\"id\":1,\"msg\":\"test\"}\n");
+    Ok(())
+}
+#[test]
+fn test_rowbinary() -> Result<()> {
+    let query = "SELECT 'test' as String".to_string();
+
+    let result = execute(&query, &[Arg::OutputFormat(OutputFormat::RowBinary)])?;
+    #[derive(Debug, Deserialize, Row)]
+    struct LogEntry {
+        msg: String,
+    }
+    let mut rows = vec![];
+    result.fetch_rows::<LogEntry>(&mut rows)?;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].msg, "test");
+
     Ok(())
 }
