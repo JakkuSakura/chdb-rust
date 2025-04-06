@@ -3,7 +3,6 @@ use chdb_rust::error::Result;
 use chdb_rust::execute;
 use chdb_rust::format::InputFormat;
 use chdb_rust::format::OutputFormat;
-use chdb_rust::log_level::LogLevel;
 use chdb_rust::session::SessionBuilder;
 use clickhouse::Row;
 use serde::Deserialize;
@@ -16,7 +15,6 @@ fn test_stateful() -> Result<()> {
     let tmp = tempdir::TempDir::new("chdb-rust")?;
     let session = SessionBuilder::new()
         .with_data_path(tmp.path())
-        .with_arg(Arg::LogLevel(LogLevel::Debug))
         .with_arg(Arg::Custom("priority".into(), Some("1".into())))
         .with_auto_cleanup(true)
         .build()?;
@@ -59,7 +57,50 @@ fn test_stateful() -> Result<()> {
     assert_eq!(result.data_utf8_lossy(), "{\"id\":1,\"msg\":\"test\"}\n");
     Ok(())
 }
+#[test]
+fn test_stateful_default() -> Result<()> {
+    //
+    // Create session.
+    //
+    let tmp = tempdir::TempDir::new("chdb-rust")?;
+    let session = SessionBuilder::new()
+        .with_data_path(tmp.path())
+        .with_arg(Arg::Custom("priority".into(), Some("1".into())))
+        .with_auto_cleanup(true)
+        .build()?;
 
+    //
+    // Create table.
+    //
+
+    session.execute(
+        "CREATE TABLE logs (id UInt64, msg String) ENGINE = MergeTree() ORDER BY id",
+        &[],
+    )?;
+
+    //
+    // Insert into table.
+    //
+
+    session.execute("INSERT INTO logs (id, msg) VALUES (1, 'test')", &[])?;
+
+    //
+    // Select from table.
+    //
+    let len = session.execute(
+        "SELECT COUNT(*) FROM logs",
+        &[Arg::OutputFormat(OutputFormat::JSONEachRow)],
+    )?;
+
+    assert_eq!(len.data_utf8_lossy(), "{\"COUNT()\":1}\n");
+
+    let result = session.execute(
+        "SELECT * FROM logs",
+        &[Arg::OutputFormat(OutputFormat::JSONEachRow)],
+    )?;
+    assert_eq!(result.data_utf8_lossy(), "{\"id\":1,\"msg\":\"test\"}\n");
+    Ok(())
+}
 #[test]
 fn test_stateless() -> Result<()> {
     let query = format!(
